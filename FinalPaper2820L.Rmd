@@ -1,0 +1,227 @@
+---
+title: "FinalProject2820L"
+author: "Daniel Zhang"
+date: "5/1/2022"
+output: html_document
+---
+
+Daniel Zhang
+MATH 2820L Final Project
+
+### Introduction
+
+In this project, we want to explore a Unicorn company's dataset available at link: https://www.kaggle.com/datasets/deepcontractor/unicorn-companies-dataset. This dataset contains 1037 companies and 13 columns to categorize them, such as Valuation, Date Joined, Country, City, Industry, Total Raised, etc.  A unicorn company refers to a privately held startup company that has a valuation exceeding $1 billion. Some of the most well-known unicorns include Robinhood, Airbnb, etc. In this project, we are interested in the trends of the Unicorn companies and possible relationships between the aforementioned categories. For instance, we are curious about whether the amount of money raised would have an impact on the market evaluation of the company. Or if a specific U.S. city produces more Unicorn companies than others. 
+
+### Data cleaning
+Before we went into the analysis process, we noticed several problems within the dataset. For instance, the data entries in the Valuation column are all characters instead of numbers. Thus we converted all entries into numericals. Similarly, we replaced all the ‘M’ and ‘B’ letters in Total Raised with corresponding monetary values and converted the entries into numerics. In addition, we converted the characters into calendar dates for the Date Joined column. And we noticed Fintech was spelled differently occasionally, so we converted all instances of the alternative spelling to Fintech. Finally, we took the log of all economic data since it's standard to do so.
+
+
+``` {r}
+
+
+library(tidyverse)
+library(stringr)
+library(ggplot2)
+library(doBy)
+
+uni_company <-read.csv("Unicorn_Companies.csv")
+
+
+
+uni_company = uni_company %>%
+  mutate(Valuation...B. = gsub('[$]', '', Valuation...B.)) %>%
+  mutate(Valuation...B. = as.numeric(Valuation...B.)) %>%
+  mutate(Valuation...B. = Valuation...B. * 1000000000) %>%
+  mutate(Total.Raised = gsub('[$]', '', Total.Raised)) %>%
+  mutate(Total.Raised = as.numeric(str_replace_all(Total.Raised, setNames(c("e6", "e9"), c("M", "B"))))) %>%
+  #filter(Country == "United States") %>%
+  mutate(Total.Raised = log(Total.Raised)) %>%
+  mutate(Valuation...B. = log(Valuation...B.)) %>% 
+  mutate(Date.Joined = as.Date(Date.Joined, "%m/%d/%Y"))
+
+uni_company$Industry[uni_company$Industry == "Finttech"] <- "Fintech"
+```
+
+### Data Exploration
+
+With a little bit of prior knowledge and some light exploration, we realized Country would have have some hard to predict effects on our data and introduce extra noise. Here's a graph of mean log valuation by Country.
+
+``` {r}
+uni_company$Country = factor(uni_company$Country)
+ind_means <- summaryBy(Valuation...B.  ~ Country, data=uni_company , FUN=c(mean), na.rm=TRUE)
+ggplot(ind_means, aes(x=Country, y=Valuation...B..mean, fill=Country)) + 
+   geom_bar(stat = "identity") +  
+   guides(fill = FALSE) +
+  xlab("Country") + ylab("Mean Log Valuation") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  + 
+  ggtitle("Mean Log Valuation, by Country")
+```
+
+First order of business was filtering out non-US entries. US Companies comprise the majority of our dataset anyways, and we intended to focus on the US originally. Companies outside of the US have different financial regulations and other conditions, which all affect valuation and would make it a little harder for us to analyze/interpret the data. 
+
+We continue with the rest of our data exploration. We wanted to investigate how different variables were related to Valuation. This dataset was about large venture-capital funded enterpreneur-ed companies, so we wanted to investigate how they reached their valuations. Here are some visualizations of some categorical/numerical variables against Valuation. 
+
+``` {r}
+
+uni_company = uni_company %>%
+  filter(Country == "United States")
+
+ggplot(uni_company, aes(x = Total.Raised, y = Valuation...B.)) +
+    geom_point() +
+    geom_smooth(method="lm") +
+  xlab("Total Raised") + ylab("Mean Log Valuation") + 
+  ggtitle(" Log Valuation, Total Raised")
+
+ggplot(uni_company, aes(x = Investors.Count, y = Valuation...B.)) +
+    geom_point() +
+    geom_smooth(method="lm") +
+  xlab("Number of Investors") + ylab("Mean Log Valuation") + 
+  ggtitle(" Log Valuation, by Number of Investors")
+
+ggplot(uni_company, aes(x = Date.Joined, y = Valuation...B.)) +
+    geom_point() +
+    geom_smooth(method="lm")+
+  xlab("Date Joined") + ylab("Mean Log Valuation") + 
+  ggtitle(" Log Valuation, by Date Joined")
+
+uni_company$Industry = factor(uni_company$Industry)
+ind_means <- summaryBy(Valuation...B.  ~ Industry, data=uni_company , FUN=c(mean), na.rm=TRUE)
+ggplot(ind_means, aes(x=Industry, y=Valuation...B..mean, fill=Industry)) + 
+   geom_bar(stat = "identity") +  
+   guides(fill = FALSE) +
+  xlab("Industry") + ylab("Mean Log Valuation") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  + 
+  ggtitle("Mean Log Valuation, by Industry")
+
+IndustryLm = lm(Valuation...B. ~ Industry, uni_company)
+summary(IndustryLm)
+summary(IndustryLm)$r.squared
+
+uni_company$City = factor(uni_company$City)
+
+city_means <- summaryBy(Valuation...B.  ~ City, data=uni_company , FUN=c(mean), na.rm=TRUE)
+
+print("Here are all the cities in the US and their mean valuations")
+ggplot(data=city_means, aes(x=City, y=Valuation...B..mean, fill=City)) + 
+   geom_bar(stat = "identity") +  
+   guides(fill = FALSE) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 3.5))  + 
+  xlab("City") + ylab("Mean Log Valuation") + 
+  ggtitle("Mean Log Valuation, by City (All Cities in US)")
+```
+
+Some things we noticed in our data exploration:
+- Total raised has an moderately strong positive linear correlation with valuation
+- Industry has almost no linear correlation with valuation r-squared = .01311
+- Number of investors has almost no linear correlation with valuation
+- Date joined has a moderately weak linear negative linear correlation with valuation
+- Some interesting outliers when we plot valuation against city. By inspection of the dataset, we know that some cities have many many more startup companies, like San Francisco or New York. Background knowledge leads us to think launching in these cities allows for a higher valuation, since there are more resources for these companies like access to markets, employees, etc. 
+
+### Our Model: Valuation against City
+
+We want to inspect if there is a relationship between city and valuation, see which cities actually do have a relationship, and what their relationship is. We begin with the null hypothesis that all coefficients in our model are equal to 0.
+
+We factor our data and run the linear regression.
+``` {r}
+
+
+
+lm1 <- lm(Valuation...B. ~ City, uni_company)
+
+summary(lm(Valuation...B. ~ City, uni_company))
+summary(lm1)$r.squared
+
+
+```
+
+Our regression r-squared tells us 27.18% of the variability in valuation can be explained by variability in City. Almost all of our cities have coefficients that are relatively small compared to their standard errors. Our linear model has a good amount of error, as shown by our R-squared. 
+
+The regression only finds two cities with statistically significant relationships with Valuation at the 95% level. Here are the 95% confidence intervals for the coefficients of every city.
+
+``` {r}
+confint(lm1, level = .95)
+```
+
+Besides Cary and Jacksonville, every interval contains 0. Cary's confidence interval goes from 0.45436932 to 4.6331250. Jacksonville's is from 0.01253657  4.1912922. 
+
+### Conclusion
+
+We do not have enough evidence to reject the null hypothesis, but our model has some predictive power, especially for those two cities. Cary and Jacksonville may just be the next San Francisco and New York. 
+
+In our preliminary analysis, we found some other predictors, like date joined and total raised, but we don't care much about those because total raised is directly proportional to valuation since investors pay for shares based on the valuation of the company, and longer established companies are generally valued more in our dataset. We wanted to investigate what would help new companies achieve high valuations. 
+
+Another visualization that is easier to look at-- only includes the 20 cities that are most represented in the dataset. 
+``` {r}
+
+
+
+company_cities = uni_company %>% 
+  group_by(City) %>%
+  mutate(group_num = n())
+
+
+large_cities = subset(company_cities, group_num >= 5)
+
+city_means2 <- summaryBy(Valuation...B.  ~ City, data=large_cities , FUN=c(mean), na.rm=TRUE)
+
+print("Here are the top 20 cities in the US by number of companies and their respective mean valuations")
+ggplot(data = city_means2, aes(x=City, y= Valuation...B..mean, fill=City)) +
+  geom_bar(stat = "identity") +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  + 
+  xlab("City") + ylab("Mean Log Valuation") + 
+  ggtitle("Mean Log Valuation, by City (Top 20 Cities)")
+```
+
+### Side Analysis
+
+I was curious so I just wanted to see how the cities that were less represented affected our model. I wanted to also investigate the relationship of being in a more entrepreneur heavy city and valuation, so I ran the regression again but only with the 20 most represented cities. 
+
+``` {r}
+
+
+lm2 <- lm(Valuation...B. ~ City, large_cities)
+
+summary(lm2)
+summary(lm2)$r.squared
+
+```
+
+It turns out that our R-squared goes down, and that we don't find any cities with statistically significant relationships at the 95% confidence level.
+
+Also, we are going to try to see if there's a dependency between number of unicorns and city/industry.
+``` {r}
+library(dplyr)
+lm3 <- lm(group_num ~ City, company_cities)
+summary(lm3)
+
+
+
+company_industries = uni_company %>% 
+  group_by(Industry) %>%
+  mutate(group_num = n()) %>%
+  distinct(Industry, .keep_all = TRUE)
+
+company_cities = company_cities %>%
+  distinct(City, .keep_all = TRUE)
+
+lm4 <- lm(group_num ~ 0 + Industry, company_industries)
+summary(lm4)
+
+ggplot(company_industries, aes(x=Industry, y=group_num, fill=Industry)) + 
+   geom_bar(stat = "identity") +  
+   guides(fill = FALSE) +
+  xlab("Industry") + ylab("Num of companies") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  + 
+  ggtitle("Num of companies, by Industry")
+
+ggplot(company_cities, aes(x=City, y=group_num, fill=City)) + 
+   geom_bar(stat = "identity") +  
+   guides(fill = FALSE) +
+  xlab("City") + ylab("Num of companies") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 3.5))  + 
+  ggtitle("Num of companies, by City")
+
+
+```
+
+
