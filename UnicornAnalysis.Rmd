@@ -6,7 +6,6 @@ output: html_document
 ---
 
 Daniel Zhang
-MATH 2820L Final Project
 
 ### Introduction
 
